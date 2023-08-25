@@ -1,33 +1,34 @@
 #ifndef __MUXER_MANAGER_H
 #define __MUXER_MANAGER_H
 
+#include "abstractMuxer.h"
+#include "bufferedFileWriter.h"
 #include "bufferedReaderManager.h"
 #include "metaDemuxer.h"
-#include "bufferedFileWriter.h"
-#include "abstractMuxer.h"
 
 class FileFactory;
 
 class MuxerManager
 {
-public:
-    static const uint32_t PHYSICAL_SECTOR_SIZE = 2048; // minimum write align requirement. Should be readed from OS in a next version
-    static const int BLURAY_SECTOR_SIZE = PHYSICAL_SECTOR_SIZE * 3; // real sector size is 2048, but M2TS frame required addition rounding by 3 blocks
+   public:
+    static const uint32_t PHYSICAL_SECTOR_SIZE =
+        2048;  // minimum write align requirement. Should be readed from OS in a next version
+    static const int BLURAY_SECTOR_SIZE =
+        PHYSICAL_SECTOR_SIZE * 3;  // real sector size is 2048, but M2TS frame required addition rounding by 3 blocks
 
-
-    MuxerManager (const BufferedReaderManager& readManager, AbstractMuxerFactory& factory);
+    MuxerManager(const BufferedReaderManager& readManager, AbstractMuxerFactory& factory);
     virtual ~MuxerManager();
 
-    void setAsyncMode(bool val) {m_asyncMode = val;}
+    void setAsyncMode(bool val) { m_asyncMode = val; }
 
-    //void setFileBlockSize ( uint32_t nFileBlockSize) { m_fileBlockSize = nFileBlockSize; }
-    //int32_t getFileBlockSize() const { return m_fileBlockSize; }
+    // void setFileBlockSize ( uint32_t nFileBlockSize) { m_fileBlockSize = nFileBlockSize; }
+    // int32_t getFileBlockSize() const { return m_fileBlockSize; }
 
     bool isAsyncMode() const { return m_asyncMode; }
 
     virtual bool openMetaFile(const std::string& fileName);
     int addStream(const std::string& codecName, const std::string& fileName,
-      const std::map<std::string, std::string>& addParams);
+                  const std::map<std::string, std::string>& addParams);
 
     void doMux(const std::string& outFileName, FileFactory* fileFactory);
 
@@ -44,7 +45,7 @@ public:
     void muxBlockFinished(AbstractMuxer* muxer);
 
     void parseMuxOpt(const std::string& opts);
-    int getTrackCnt() { return (int) m_metaDemuxer.getCodecInfo().size();}
+    int getTrackCnt() { return (int)m_metaDemuxer.getCodecInfo().size(); }
     bool getHevcFound() { return m_metaDemuxer.m_HevcFound; }
     AbstractMuxer* getMainMuxer();
     AbstractMuxer* getSubMuxer();
@@ -55,17 +56,29 @@ public:
     bool isMvcBaseViewR() const { return m_mvcBaseViewR; }
     int64_t totalSize() const { return m_metaDemuxer.totalSize(); }
     int getExtraISOBlocks() const { return m_extraIsoBlocks; }
-private:
+
+    bool useReproducibleIsoHeader() const { return m_reproducibleIsoHeader; }
+
+    enum class SubTrackMode
+    {
+        All,
+        Forced
+    };
+    int getDefaultAudioTrackIdx() const;
+    int getDefaultSubTrackIdx(SubTrackMode& mode) const;
+
+   private:
     void preinitMux(const std::string& outFileName, FileFactory* fileFactory);
-    AbstractMuxer* createMuxer ();
+    AbstractMuxer* createMuxer();
     void asyncWriteBlock(const WriterData& data);
     void checkTrackList(const std::vector<StreamInfo>& ci);
-private:
+
+   private:
     AbstractMuxer* m_mainMuxer;
     AbstractMuxer* m_subMuxer;
 
     bool m_asyncMode;
-    //int32_t m_fileBlockSize;
+    // int32_t m_fileBlockSize;
     std::string m_outFileName;
     std::condition_variable reinitCond;
     METADemuxer m_metaDemuxer;
@@ -78,7 +91,7 @@ private:
     std::string m_muxOpts;
     bool m_interleave;
 
-    std::vector<WriterData>  m_delayedData; // ssif interlieave
+    std::vector<WriterData> m_delayedData;  // ssif interlieave
     bool m_subBlockFinished;
     bool m_mainBlockFinished;
     bool m_mvcBaseViewR;
@@ -86,6 +99,7 @@ private:
     int m_extraIsoBlocks;
     bool m_bluRayMode;
     bool m_demuxMode;
+    bool m_reproducibleIsoHeader = false;
 };
 
-#endif // __MUXER_MANAGER_H
+#endif  // __MUXER_MANAGER_H

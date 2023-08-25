@@ -24,17 +24,17 @@ docker build -t justdan96/tsmuxer_build .
 
 *Linux*
 ```
-docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". rebuild_linux_docker.sh"
+docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". scripts/rebuild_linux_docker.sh"
 ```
 
 *Windows*
 ```
-docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". rebuild_mxe_docker.sh"
+docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". scripts/rebuild_mxe_docker.sh"
 ```
 
 *OSX*
 ```
-docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". rebuild_osxcross_docker.sh"
+docker run -it --rm -v $(pwd):/workdir -w="/workdir" justdan96/tsmuxer_build bash -c ". scripts/rebuild_osxcross_docker.sh"
 ```
 
 The executable binary will be saved to the "\bin" folder.
@@ -48,9 +48,7 @@ First we have to install the pre-requisites. On Debian 10 you have to enable the
 Common:
 ```
 sudo apt-get update
-sudo apt-get install build-essential \
-g++-multilib
-ninja
+sudo apt-get install build-essential g++-multilib ninja-build cmake
 
 # on Ubuntu:
 sudo apt-get install checkinstall
@@ -89,7 +87,9 @@ qtdeclarative5-dev \
 qtmultimedia5-dev \
 libqt5multimediawidgets5 \
 libqt5multimedia5-plugins \
-libqt5multimedia5
+libqt5multimedia5 \
+qttools5-dev \
+qttools5-dev-tools
 ```
 
 With all the dependencies set up we can now actually compile the code.
@@ -98,14 +98,14 @@ Open the folder where the git repo is stored in a terminal and run the following
 
 ```
 # build the project
-./rebuild_linux.sh
+./scripts/rebuild_linux.sh
 ```
 
 Or run the following to build the GUI as well:
 
 ```
 # build the project
-./rebuild_linux_with_gui.sh
+./scripts/rebuild_linux_with_gui.sh
 ```
 
 Next run the below to create a DEB file:
@@ -186,14 +186,14 @@ Open the folder where the git repo is stored in a terminal and run the following
 
 ```
 # build the project
-./rebuild_mxe.sh
+./scripts/rebuild_mxe.sh
 ```
 
 Or run the following to build the GUI as well:
 
 ```
 # build the project
-./rebuild_mxe_with_gui.sh
+./scripts/rebuild_mxe_with_gui.sh
 ```
 
 ## Windows (Msys2)
@@ -205,55 +205,54 @@ Common:
 pacman -Syu
 pacman -Sy --needed base-devel \
 flex \
-zlib-devel
+zlib-devel \
+git
 ```
 
-32-bit:
+Or just run:
 ```
-pacman -Sy --needed mingw-w64-i686-toolchain \
-mingw-w64-i686-cmake \
-mingw-w64-i686-freetype \
-mingw-w64-i686-zlib
+./scripts/rebuild_msys2.sh
 ```
 
-64-bit:
+Close the Msys2 prompt and then open either a Mingw32 or a Mingw64 prompt, depending on whether you want to build for 32 or 64 bit.
 ```
-pacman -Sy --needed mingw-w64-x86_64-toolchain \
-mingw-w64-x86_64-cmake \
-mingw-w64-x86_64-freetype \
-mingw-w64-x86_64-zlib
+pacman -Sy --needed $MINGW_PACKAGE_PREFIX-toolchain \
+$MINGW_PACKAGE_PREFIX-cmake \
+$MINGW_PACKAGE_PREFIX-freetype \
+$MINGW_PACKAGE_PREFIX-zlib \
+$MINGW_PACKAGE_PREFIX-ninja
 ```
 
 If you intend to build the GUI as well you need to also install these, depending on your platform (please note Qt5 takes up a LOT of disk space!):
-
-32-bit:
 ```
-pacman -Sy --needed mingw-w64-i686-qt5-static
+pacman -Sy --needed $MINGW_PACKAGE_PREFIX-qt5-static
 ```
 
-64-bit:
-```
-pacman -Sy --needed mingw-w64-x86_64-qt5-static
-```
-
-Close the Msys2 prompt and then open either a Mingw32 or a Mingw64 prompt, depending on whether you want to build for 32 or 64 bit. Before we compile anything we have to alter a file to work around [this bug](https://bugreports.qt.io/browse/QTBUG-76660). Run the following commands to fix that:
-
+Before we compile anything we have to alter a file to work around [this bug](https://bugreports.qt.io/browse/QTBUG-76660). Run the following commands to fix that:
 ```
 echo 'load(win32/windows_vulkan_sdk)' > $MINGW_PREFIX/qt5-static/share/qt5/mkspecs/common/windows-vulkan.conf
 echo 'QMAKE_LIBS_VULKAN       =' >> $MINGW_PREFIX/qt5-static/share/qt5/mkspecs/common/windows-vulkan.conf
 ```
 
-With that fixed, browse to the location of the tsMuxer repo and then run the following commands:
-
+Download tsMuxer repo and browse to the it location by run:
 ```
-mkdir build
-cd build
-cmake ../ -G Ninja
-cmake . --build
-cp tsMuxer/tsmuxer.exe tsMuxerGUI/tsMuxeR.exe
+cd ~
+git clone https://github.com/justdan96/tsMuxer.git
+cd tsMuxer
+```
+Compile tsMuxer by run:
+```
+./scripts/rebuild_linux.sh
 ```
 
-This will create statically compiled versions of tsMuxer and tsMuxerGUI - so no external DLL files are required.
+This will create in tsMuxer/bin statically compiled versions of tsMuxer - so no external DLL files are required.
+
+Or just run:
+```
+./scripts/rebuild_msys2.sh
+```
+
+This will create in tsMuxer/bin statically compiled versions of tsMuxer and tsMuxerGUI - so no external DLL files are required.
 
 ## MacOS (osxcross on Linux)
 
@@ -328,12 +327,50 @@ Open the folder where the git repo is stored in a terminal and run the following
 
 ```
 # build the project
-./rebuild_osxcross.sh
+./scripts/rebuild_osxcross.sh
 ```
 
 Or run the following to build the GUI as well:
 
 ```
 # build the project
-./rebuild_osxcross_with_gui.sh
+./scripts/rebuild_osxcross_with_gui.sh
 ```
+
+## MacOS (Native)
+
+To use compile tsMuxer on Mac natively we must first use Homebrew to install some dependencies:
+
+```
+ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)" < /dev/null 2> /dev/null
+brew install freetype
+brew install zlib
+```
+
+Next we need to install Qt. Please note that Qt through Homebrew has issues with `macdeployqt` so is *not* supported. To ensure it is not installed at all run the commands below:
+
+```
+brew uninstall qt
+```
+
+We will use `aqtinstall` to download and install the offical Qt for Mac package. Qt 6.2.2 officially supports Apple silicon so this version is recommended. To install Qt6 for Mac we will need to install `pip`, use that to install `aqtinstall`, use `aqtinstall` to download the latest version of Qt for Mac before finally copying the installation and enabling it to be used system-wide.
+
+```
+# install pip
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
+# install aqtinstall and download Qt 6.2.2
+pip install aqtinstall
+aqt install-qt mac desktop 6.2.2 -m qtmultimedia
+# install Qt to /opt/qt
+sudo mkdir /opt/qt
+sudo cp -r ./6.2.2/macos/* /opt/qt/
+# make Qt bin folder available in PATH
+echo 'export PATH=/opt/qt/bin:$PATH' >> $HOME/.zprofile
+. $HOME/.zprofile
+# cleanup temporary files
+rm -f get-pip.py
+rm -rf ./6.2.2
+```
+
+With all of those requirements met we can now compile the programs. Simply run `./scripts/build_macos_native.sh` from the repository folder. Upon completion the executables will be available in the ./build/bin folder.

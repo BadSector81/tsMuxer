@@ -1,7 +1,7 @@
 rm -rf build
 mkdir build
 cd build
-cmake  -DTSMUXER_GUI=ON -DTSMUXER_STATIC_BUILD=ON ../
+cmake  -DTSMUXER_GUI=ON -DTSMUXER_STATIC_BUILD=ON -DFREETYPE_LDFLAGS=png ../
 make
 cp tsMuxer/tsmuxer ../bin/tsMuxeR
 cp tsMuxerGUI/tsMuxerGUI ../bin/tsMuxerGUI
@@ -35,7 +35,7 @@ EOF
 
 cd ./bin/lnx
 
-/opt/linuxdeploy/usr/bin/linuxdeploy --appdir AppDir --plugin qt --output appimage
+APPIMAGE_EXTRACT_AND_RUN=1 /usr/local/bin/linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
 
 cd ../..
 

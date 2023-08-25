@@ -1,182 +1,156 @@
 /***********************************************************************
-*	File: file.cpp
-*	Author: Andrey Kolesnikov
-*	Date: 13 oct 2006
-***********************************************************************/
+ *	File: file.cpp
+ *	Author: Andrey Kolesnikov
+ *	Date: 13 oct 2006
+ ***********************************************************************/
 
-#include "../file.h"
-#include "../directory.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <sstream>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
 
-#if defined(__APPLE__) && defined(__MACH__)
-#define O_LARGEFILE 0
-#endif
+#include "../directory.h"
+#include "../file.h"
 
-
-void makeUnixOpenFlags( 
-	unsigned int oflag, 
-	int* const unixOflag )
+namespace
 {
-	int sysFlags = 0;
-	if( oflag & File::ofRead )
-		sysFlags = O_RDONLY;
-	if( oflag & File::ofWrite )
-	{
-		if( oflag & File::ofRead)
-			sysFlags = O_RDWR | O_TRUNC;
-		else
-			sysFlags = O_WRONLY | O_TRUNC;
-		if( !(oflag & File::ofOpenExisting) )
-			sysFlags |= O_CREAT;
-		if( oflag & File::ofNoTruncate)
-		{
-			sysFlags &= ~O_TRUNC;
-		}
-		if( oflag & File::ofAppend )
-		{
-			sysFlags |= O_APPEND;
-			sysFlags &= ~O_TRUNC;
-		}
+int to_fd(void* impl) { return static_cast<int>(reinterpret_cast<std::intptr_t>(impl)); }
+void* from_fd(int fd) { return reinterpret_cast<void*>(static_cast<std::intptr_t>(fd)); }
 
-	}
-	if( oflag & File::ofCreateNew )
-		sysFlags |= O_CREAT | O_EXCL;
-	*unixOflag = sysFlags;
+int makeUnixOpenFlags(unsigned int oflag)
+{
+    int sysFlags = 0;
+    if (oflag & File::ofRead)
+        sysFlags = O_RDONLY;
+    if (oflag & File::ofWrite)
+    {
+        if (oflag & File::ofRead)
+            sysFlags = O_RDWR | O_TRUNC;
+        else
+            sysFlags = O_WRONLY | O_TRUNC;
+        if (!(oflag & File::ofOpenExisting))
+            sysFlags |= O_CREAT;
+        if (oflag & File::ofNoTruncate)
+        {
+            sysFlags &= ~O_TRUNC;
+        }
+        if (oflag & File::ofAppend)
+        {
+            sysFlags |= O_APPEND;
+            sysFlags &= ~O_TRUNC;
+        }
+    }
+    if (oflag & File::ofCreateNew)
+        sysFlags |= O_CREAT | O_EXCL;
+    return sysFlags;
 }
+}  // namespace
 
-File::File():
-	m_impl( (void*)0xffffffff ),
-	m_name ( "" ),
-    m_pos(0)
-{
-}
+File::File() : m_impl(from_fd(-1)), m_pos(0) {}
 
-File::File ( const char* fName, unsigned int oflag, unsigned int systemDependentFlags ) /* throw ( std::runtime_error ) */:
-    m_name ( fName ),
-    m_pos(0)
+File::File(const char* fName, unsigned int oflag, unsigned int systemDependentFlags) : m_name(fName), m_pos(0)
 {
-	int sysFlags = 0;
-	makeUnixOpenFlags( oflag, &sysFlags );
-	m_impl = (void*)::open( fName, sysFlags | O_LARGEFILE | systemDependentFlags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
-	if( (long)m_impl == -1 )
-	{
-		std::ostringstream ss;
-		ss<<"Error opening file "<<fName<<": "<<strerror(errno)<<"("<<errno<<")";
-		throw std::runtime_error( ss.str() );
-	}
+    int sysFlags = makeUnixOpenFlags(oflag);
+    auto fd = ::open(fName, sysFlags | systemDependentFlags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    if (fd == -1)
+    {
+        std::ostringstream ss;
+        ss << "Error opening file " << fName << ": " << strerror(errno) << "(" << errno << ")";
+        throw std::runtime_error(ss.str());
+    }
+    m_impl = from_fd(fd);
 }
 
 File::~File()
 {
-	if( isOpen() )
-		close();
+    if (isOpen())
+        close();
 }
 
-bool File::open ( const char* fName, unsigned int oflag, unsigned int systemDependentFlags )
+bool File::open(const char* fName, unsigned int oflag, unsigned int systemDependentFlags)
 {
-	m_name = fName;
-	
-	if( isOpen() )
-		close();
+    m_name = fName;
 
-	int sysFlags = 0;
-	makeUnixOpenFlags( oflag, &sysFlags );
-    createDir ( extractFileDir ( fName ), true );
-	m_impl = (void*)::open( fName, sysFlags | O_LARGEFILE | systemDependentFlags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+    if (isOpen())
+        close();
 
-	return (long)m_impl != -1;
+    int sysFlags = makeUnixOpenFlags(oflag);
+    createDir(extractFileDir(fName), true);
+    auto fd = ::open(fName, sysFlags | systemDependentFlags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    m_impl = from_fd(fd);
+    return fd != -1;
 }
 
 bool File::close()
 {
-	if( ::close( (long)m_impl ) == 0 )
-	{
-		m_impl = (void*)0xffffffff;
-		return true;
-	}
+    if (::close(to_fd(m_impl)) == 0)
+    {
+        m_impl = from_fd(-1);
+        return true;
+    }
 
-	return false;
+    return false;
 }
 
-int File::read( void* buffer, uint32_t count ) const
+int File::read(void* buffer, uint32_t count) const
 {
-	if( !isOpen() )
-		return -1;
+    if (!isOpen())
+        return -1;
     m_pos += count;
-	return ::read( (long)m_impl, buffer, count );
+    return ::read(to_fd(m_impl), buffer, count);
 }
 
-int File::write( const void* buffer, uint32_t count )
+int File::write(const void* buffer, uint32_t count)
 {
-	if( !isOpen() )
-		return -1;
+    if (!isOpen())
+        return -1;
     m_pos += count;
-	return ::write( (long)m_impl, buffer, count );
+    return ::write(to_fd(m_impl), buffer, count);
 }
 
-bool File::isOpen() const
-{
-	return m_impl != (void*)0xffffffff;
-}
+bool File::isOpen() const { return to_fd(m_impl) != -1; }
 
-bool File::size( uint64_t* const fileSize ) const
+bool File::size(uint64_t* const fileSize) const
 {
     bool res = false;
 
-    struct stat64 buf;
+    struct stat buf;
 
-    if( isOpen() &&  ( fstat64( (long)m_impl, &buf ) == 0 ) )
+    if (isOpen() && (fstat(to_fd(m_impl), &buf) == 0))
     {
-    	*fileSize = buf.st_size;
-    	res = true;
+        *fileSize = buf.st_size;
+        res = true;
     }
 
-	return res;
+    return res;
 }
 
-uint64_t File::seek( int64_t offset, SeekMethod whence )
+uint64_t File::seek(int64_t offset, SeekMethod whence)
 {
-	if( !isOpen() )
-		return (uint64_t)-1;
+    if (!isOpen())
+        return UINT64_C(-1);
 
-	int sWhence = 0;
-	switch( whence )
-	{
-	case smBegin:
-		sWhence = SEEK_SET;
-		break;
-	case smCurrent:
-		sWhence = SEEK_CUR;
-		break;
-	case smEnd:
-		sWhence = SEEK_END;
-		break;
-	}
+    int sWhence = 0;
+    switch (whence)
+    {
+    case SeekMethod::smBegin:
+        sWhence = SEEK_SET;
+        break;
+    case SeekMethod::smCurrent:
+        sWhence = SEEK_CUR;
+        break;
+    case SeekMethod::smEnd:
+        sWhence = SEEK_END;
+        break;
+    }
     m_pos = offset;
-#if defined(__APPLE__) && defined(__MACH__)
-	return lseek( (long)m_impl, offset, sWhence );
-#else
-	return lseek64( (long)m_impl, offset, sWhence );
-#endif	
+    return lseek(to_fd(m_impl), offset, sWhence);
 }
 
-bool File::truncate( uint64_t newFileSize )
-{
-#if defined(__APPLE__) && defined(__MACH__)
-	return ftruncate( (long)m_impl, newFileSize ) == 0;
-#else
-	return ftruncate64( (long)m_impl, newFileSize ) == 0;
-#endif	
-}
+bool File::truncate(uint64_t newFileSize) { return ftruncate(to_fd(m_impl), newFileSize) == 0; }
 
-void File::sync()
-{
-	::sync();
-}
-
+void File::sync() { ::sync(); }

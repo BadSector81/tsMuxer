@@ -29,6 +29,8 @@ add_executable (tsmuxer
   matroskaDemuxer.cpp
   matroskaParser.cpp
   metaDemuxer.cpp
+  mlpCodec.cpp
+  mlpStreamReader.cpp
   movDemuxer.cpp
   mp3Codec.cpp
   mpeg2StreamReader.cpp
@@ -52,6 +54,8 @@ add_executable (tsmuxer
   vc1Parser.cpp
   vc1StreamReader.cpp
   vod_common.cpp
+  vvc.cpp
+  vvcStreamReader.cpp
   wave.cpp
 )
 
@@ -63,7 +67,10 @@ if(TSMUXER_STATIC_BUILD)
       target_compile_options(tsmuxer "/MT")
     endif()
   else()
-    set (CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static")
+    # static linking isn't supported on Mac
+    if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+      set (CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static")
+    endif()
   endif()
   set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 endif()
@@ -72,6 +79,10 @@ function(pkg_check_modules_with_static prefix req_or_opt package)
   pkg_check_modules (${prefix} ${req_or_opt} ${package})
   if (TSMUXER_STATIC_BUILD)
     set(static_libs "${${prefix}_STATIC_LIBRARIES}")
+    # for osxcross if we want a mostly static build we need to append "-static" to the libraries
+    if(DEFINED OSXCROSS_SDK)
+      list(TRANSFORM static_libs APPEND "-static")
+    endif()
     set(${prefix}_LIBRARIES "${static_libs}" CACHE INTERNAL "")
   endif()
 endfunction()
@@ -79,11 +90,14 @@ endfunction()
 find_package (Threads REQUIRED)
 find_package (PkgConfig)
 
-if (PkgConfig_FOUND)
+if (${PkgConfig_FOUND} AND NOT ${WITHOUT_PKGCONFIG})
   pkg_check_modules_with_static (ZLIB REQUIRED zlib)
   if (NOT WIN32)
-    pkg_check_modules_with_static (FREETYPE2 REQUIRED freetype2)
+    pkg_check_modules_with_static (FREETYPE REQUIRED freetype2)
   endif()
+else()
+  find_package(ZLIB REQUIRED)
+  find_package(Freetype REQUIRED)
 endif()
 
 target_include_directories(tsmuxer PRIVATE
@@ -96,18 +110,25 @@ SET(THREADSLIB Threads::Threads)
 if(TSMUXER_STATIC_BUILD)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     message("-- Static Linux build, will link whole pthread!")
+    set_target_properties(tsmuxer PROPERTIES LINK_SEARCH_START_STATIC 1)
+    set_target_properties(tsmuxer PROPERTIES LINK_SEARCH_END_STATIC 1)
     SET(THREADSLIB -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive)
   endif()
 endif()
-target_link_libraries(tsmuxer mediation ${THREADSLIB} ${ZLIB_LIBRARIES})
 
 if (WIN32)
   target_sources(tsmuxer PRIVATE osdep/textSubtitlesRenderWin32.cpp)
   target_link_libraries(tsmuxer gdiplus)
 else()
   target_sources(tsmuxer PRIVATE osdep/textSubtitlesRenderFT.cpp)
-  target_link_libraries(tsmuxer ${FREETYPE2_LIBRARIES})
-  target_include_directories(tsmuxer PRIVATE ${FREETYPE2_INCLUDE_DIRS})
+  # on osxcross use the static freetype library explicitly
+  if(DEFINED OSXCROSS_SDK)
+    list(TRANSFORM FREETYPE_LDFLAGS REPLACE "(-lfreetype)" "-lfreetype-static")
+  endif()
+  target_link_libraries(tsmuxer ${FREETYPE_LIBRARIES} ${FREETYPE_LDFLAGS})
+  target_include_directories(tsmuxer PRIVATE ${FREETYPE_INCLUDE_DIRS})
 endif()
 
-install (TARGETS tsmuxer DESTINATION bin)
+target_link_libraries(tsmuxer mediation ${THREADSLIB} ${ZLIB_LIBRARIES})
+
+install (TARGETS tsmuxer DESTINATION ${CMAKE_INSTALL_BINDIR})
